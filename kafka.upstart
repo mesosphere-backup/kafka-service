@@ -1,0 +1,19 @@
+description "Kafka Broker"
+
+start on runlevel [2345]
+stop on [!12345]
+
+respawn
+respawn limit 2 5
+
+umask 007
+limit nofile 32768 32768
+kill timeout 300
+
+setuid nobody
+setgid nogroup
+
+script
+  [ ! -s /etc/default/kafka ] || /etc/default/kafka
+  exec /opt/kafka/bin/kafka-server-start.sh /etc/kafka/server.properties
+end script

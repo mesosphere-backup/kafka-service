@@ -1,0 +1,112 @@
+#!/bin/bash
+set -o errexit -o nounset -o pipefail
+function -h {
+cat <<USAGE
+ USAGE: kafka-properties (<name>=<value>)*
+
+  Update Kafka configuration stored in:
+
+    $file
+
+ EXAMPLE
+
+  kafka-properties broker.id="\$(hostname | cut -d. -f1)" \
+                   advertised.host.name="\$(hostname)" \
+                   num.partitions=16 \
+                   default.replication.factor=3
+
+USAGE
+}; function --help { -h ;}                 # A nice way to handle -h and --help
+
+function main {
+  configure "$@"
+}
+
+function globals {
+  export LANG=en_US.UTF-8
+  export LC_ALL=en_US.UTF-8
+  file=/etc/kafka/server.properties
+  not_loaded=true
+}; globals
+
+function configure {
+  if [[ $# -gt 0 ]]
+  then assign "$@" 
+  else show
+  fi
+}
+
+function show {
+  load_properties
+  local n=0
+  while [[ $n -lt ${#keys[@]} ]]
+  do
+    out "${keys[$n]}=${values[$n]}"
+    n=$(( n + 1 ))
+  done
+}
+
+function assign {
+  for arg in "$@"
+  do
+    if [[ $arg =~ ^([^#=]+)=(.+)$ ]]
+    then assign_one "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
+    else msg "Malformed k=v pair: $arg"
+    fi
+  done
+  msg "Overwriting $file..."
+  show >"$file"
+}
+
+function assign_one {
+  load_properties
+  local key="$1" value="$2" n=0
+  while [[ $n -lt ${#keys[@]} ]]
+  do
+    if [[ ${keys[$n]} = $key ]]
+    then
+      msg "Overriding $key..."
+      values[$n]="$value"
+      return 0
+    fi
+    n=$(( n + 1 ))
+  done
+  keys+=( "$key" )
+  values+=( "$value" )
+}
+
+function load_properties {
+  $not_loaded || return 0
+  keys=()
+  values=()
+  contents=()
+  msg "Loading $file..."
+  exec 9<"$file"
+  readarray -u 9 -t contents
+  exec 9<&-
+  for line in "${contents[@]}"
+  do
+    local sans_comment="${line%%#*}"
+    local sans_space="${line%%+( )}"
+    [[ $sans_space =~ ^([^#=]+)=(.+)$ ]] || continue
+    keys+=( "${BASH_REMATCH[1]}" )
+    values+=( "${BASH_REMATCH[2]}" )
+  done
+  not_loaded=false
+}
+
+##################################################################### Utilities
+
+function msg { out "$*" >&2 ;}
+function err { local x=$? ; msg "$*" ; return $(( $x == 0 ? 1 : $x )) ;}
+function out { printf '%s\n' "$*" ;}
+
+# Handles "no-match" exit code specified by POSIX for filtering tools.
+function maybe { "$@" || return $(( $? == 1 ? 0 : $? )) ;}
+
+######################### Delegates to subcommands or runs main, as appropriate
+if [[ ${1:-} ]] && declare -F | cut -d' ' -f3 | fgrep -qx -- "${1:-}"
+then "$@"
+else main "$@"
+fi
+

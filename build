@@ -1,0 +1,139 @@
+#!/bin/bash
+set -o errexit -o nounset -o pipefail
+function -h {
+cat <<USAGE
+ USAGE: build
+
+  Build Kafka.
+
+USAGE
+}; function --help { -h ;}                 # A nice way to handle -h and --help
+export LC_ALL=en_US.UTF-8                    # A locale that works consistently
+
+function main {
+  build_pkg "$@"
+}
+
+function build_pkg {
+  options "$@" || err "Option processing failed: $?"
+  fetch
+  build
+  pkg
+}
+
+function install_pkg {
+  build_pkg "$@"
+  install
+}
+
+function globals {
+  root="$( cd "$(dirname "$0")" && pwd -P )"
+  version=0.8.1
+  maintainer=support@mesosphere.io
+  description="Apache Kafka is a distributed messaging system."
+  url=https://kafka.apache.org/
+  license="Apache Software License 2.0"
+  download="$root"/kafka.tar.'*'z
+  package="$root"/kafka-pkg.deb
+  scala_version=2.9.2
+  mirror=http://supergsego.com/apache/
+}; globals
+
+function download_url {
+  out "${mirror%/}"/kafka/"$version"/kafka_"$scala_version"-"$version".tgz
+}
+
+function fetch {
+  curl -fL "$(download_url)" -o "$download"
+}
+
+function build {(
+  cd "$root"
+  mkdir -p toor/opt/kafka
+  mkdir -p toor/etc/init
+  mkdir -p toor/etc/kafka
+
+  cat kafka.upstart > "$root"/toor/etc/init/kafka.conf
+
+  mkdir -p kafka
+  tar -C kafka --strip-components 1 -xf "$download"
+  cd kafka
+  mv config/server.properties "$root"/toor/etc/kafka
+  mv * "$root"/toor/opt/kafka/
+  chown -R nobody:nogroup "$root"/toor/opt/kafka
+)}
+
+function install {
+  dpkg -i "$package"
+}
+
+function pkg {(
+  cd "$root"/toor
+  fpm_
+)}
+
+function fpm_ {
+  local fpm=(
+    -t deb
+    -n kafka
+    -v "$version"
+    --description "$description"
+    --url="$url"
+    -a all
+    --category misc
+    --vendor ""
+    --license "$license"
+    -m "$maintainer"
+    --prefix=/
+    -s dir
+    -p "$package"
+    -- .
+  )
+  rm -f "$package"
+  fpm "${fpm[@]}"
+  out "$package"
+}
+
+##################################################################### Utilities
+
+# Allows command-line options to set variables in scope at the point of call.
+function options {
+  local _var="" _type=""
+  # Errexit does not seem to work in this function at all. We thus do all the
+  # error propagation explicitly.
+  while [[ ${1+isset} && $1 != -- ]]
+  do
+    _var="${1//-/_}"
+    [[ ${_var:0:2} = __ ]] ||
+      { err "Value in option position: $1" ; return 1 ;}
+    _var="${_var:2}"
+    _type="$(declare -p "$_var" 2>/dev/null | cut -d' ' -f2)" ||
+      { err "No such option (variable): $1 ($_var)" ; return 1 ;}
+    case "$_type" in
+      --|-x) eval "$_var"'="$2"'    ; shift ;;
+      -a)    eval "$_var"'+=("$2")' ; shift ;;
+      *) err "Options can't set vars of this type: $_type $_var" ; return 1 ;;
+    esac
+    _options+=( "$_var" )
+    shift
+  done
+  [[ ${1+isset} ]] || return 0
+  [[ $1 = -- ]] || 
+    { err "Arguments and options must be separated with --" ; return 1 ;}
+  shift
+  _args=( "$@" )
+}; declare _options=() _args=()
+
+function msg { out "$*" >&2 ;}
+function err { local x=$? ; msg "$*" ; return $(( $x == 0 ? 1 : $x )) ;}
+function out { printf '%s\n' "$*" ;}
+
+# Handles "no-match" exit code specified by POSIX for filtering tools.
+function maybe { "$@" || return $(( $? == 1 ? 0 : $? )) ;}
+
+######################### Delegates to subcommands or runs main, as appropriate
+if [[ ${1:-} ]] && declare -F | cut -d' ' -f3 | fgrep -qx -- "${1:-}"
+then "$@"
+else main "$@"
+fi
+
