@@ -36,7 +36,7 @@ function globals {
   download="$root"/kafka.tar.'*'z
   package="$root"/kafka-pkg.deb
   scala_version=2.9.2
-  mirror=http://supergsego.com/apache/
+  mirror=https://archive.apache.org/dist/
 }; globals
 
 function download_url {
