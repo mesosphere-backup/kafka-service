@@ -10,8 +10,8 @@ umask 007
 limit nofile 32768 32768
 kill timeout 300
 
-setuid nobody
-setgid nogroup
+setuid kafka
+setgid kafka
 
 script
   [ ! -s /etc/default/kafka ] || /etc/default/kafka
