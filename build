@@ -37,6 +37,8 @@ function globals {
   package="$root"/kafka-pkg.deb
   scala_version=2.9.2
   mirror=https://archive.apache.org/dist/
+  user=kafka
+  group=kafka
 }; globals
 
 function download_url {
@@ -52,6 +54,7 @@ function build {(
   mkdir -p toor/opt/kafka
   mkdir -p toor/etc/init
   mkdir -p toor/etc/kafka
+  mkdir -p toor/opt/kafka/logs
 
   cat kafka.upstart > "$root"/toor/etc/init/kafka.conf
 
@@ -60,7 +63,7 @@ function build {(
   cd kafka
   mv config/server.properties "$root"/toor/etc/kafka
   mv * "$root"/toor/opt/kafka/
-  chown -R nobody:nogroup "$root"/toor/opt/kafka
+  chown -R "$user":"$group" "$root"/toor/opt/kafka
 )}
 
 function install {
